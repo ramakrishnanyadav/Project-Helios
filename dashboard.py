@@ -1,4 +1,4 @@
-# dashboard.py - This is the main "Executive Summary" page.
+# dashboard.py - FINAL VERSION
 
 import streamlit as st
 import pandas as pd
@@ -6,7 +6,6 @@ import plotly.express as px
 from datetime import datetime
 
 # --- PAGE CONFIGURATION ---
-# This sets the title and icon of the browser tab.
 st.set_page_config(
     page_title="Helios: Executive Summary",
     page_icon="☀️",
@@ -14,19 +13,21 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- DATA LOADING AND CACHING ---
-# The cache decorator ensures this function only runs once, making the app fast.
-# --- NEW DATA LOADING FUNCTION ---
-@st.cache_data(ttl=600) # Cache the data for 10 minutes
+# --- SNOWFLAKE DATA LOADING FUNCTION ---
+@st.cache_data(ttl=600)  # Cache data for 10 minutes
 def load_data_from_snowflake():
+    """
+    Connects to Snowflake using Streamlit's secrets management,
+    queries all necessary tables, and returns them as pandas DataFrames.
+    """
     # Establish the connection using the secrets file
     conn = st.connection("snowflake")
 
-    # Define the SQL queries
-    query_influencers = "SELECT * FROM INFLUENCERS;" # Simplified table name
-    query_posts = "SELECT * FROM POSTS;"
-    query_tracking = "SELECT * FROM TRACKING_DATA;"
-    query_payouts = "SELECT * FROM PAYOUTS;"
+    # Define the SQL queries with fully-qualified table names for clarity
+    query_influencers = "SELECT * FROM HEALTHKART_DB.RAW.INFLUENCERS;"
+    query_posts = "SELECT * FROM HEALTHKART_DB.RAW.POSTS;"
+    query_tracking = "SELECT * FROM HEALTHKART_DB.RAW.TRACKING_DATA;"
+    query_payouts = "SELECT * FROM HEALTHKART_DB.RAW.PAYOUTS;"
     
     # Run queries and load into pandas DataFrames
     influencers = conn.query(query_influencers, ttl=600)
@@ -34,25 +35,37 @@ def load_data_from_snowflake():
     tracking = conn.query(query_tracking, ttl=600)
     payouts = conn.query(query_payouts, ttl=600)
     
-    # Snowflake column names are often uppercase. Convert them to lowercase.
+    # Snowflake column names are often uppercase. Convert them to lowercase for consistency.
     influencers.columns = influencers.columns.str.lower()
     posts.columns = posts.columns.str.lower()
     tracking.columns = tracking.columns.str.lower()
     payouts.columns = payouts.columns.str.lower()
 
-    # Convert date columns to the correct format
+    # Convert date columns to the correct datetime format
     posts['date'] = pd.to_datetime(posts['date'])
     tracking['date'] = pd.to_datetime(tracking['date'])
     
     return influencers, posts, tracking, payouts
 
-# Now, find the line where you call the function and change it:
-# OLD: influencers_df, posts_df, tracking_df, payouts_df = load_data()
-# NEW:
-influencers_df, posts_df, tracking_df, payouts_df = load_data_from_snowflake()
+# --- LOAD DATA AND HANDLE ERRORS ---
+# Use a try-except block to gracefully handle connection errors.
+try:
+    influencers_df, posts_df, tracking_df, payouts_df = load_data_from_snowflake()
+except Exception as e:
+    st.error(
+        f"""
+        **An error occurred while connecting to Snowflake.**
+        
+        This could be due to incorrect credentials in your secrets file or a permissions issue.
+        Please check your secrets on Streamlit Cloud and the grants in your Snowflake account.
+        
+        *Error details: {e}*
+        """
+    )
+    st.stop()
+
 
 # --- SIDEBAR FILTERS ---
-# These widgets in the sidebar allow the user to control the dashboard.
 st.sidebar.header("Dashboard Filters")
 
 all_platforms = influencers_df['platform'].unique().tolist()
@@ -78,15 +91,12 @@ selected_date_range = st.sidebar.date_input(
     max_value=max_date
 )
 
-# Safety check for the date range input
-if len(selected_date_range) == 2:
-    start_date, end_date = selected_date_range
-else:
+if len(selected_date_range) != 2:
     st.warning("Please select a valid date range (start and end date).")
     st.stop()
+start_date, end_date = selected_date_range
 
 # --- FILTERING LOGIC ---
-# Apply the user's selections to filter the data.
 filtered_influencer_ids = influencers_df[
     (influencers_df['platform'].isin(selected_platforms)) &
     (influencers_df['persona'].isin(selected_personas))
@@ -155,3 +165,4 @@ st.subheader("Attributed Revenue Over Time")
 revenue_over_time = influencer_tracking_filtered_df.groupby('date')['revenue'].sum()
 st.line_chart(revenue_over_time)
 
+st.info("Use the pages in the sidebar to explore more detailed insights.", icon="👈")

@@ -1,23 +1,40 @@
-# pages/3_Data_Explorer.py
+# pages/3_Data_Explorer.py - FINAL VERSION
 
 import streamlit as st
 import pandas as pd
 
+# --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Data Explorer", page_icon="💾", layout="wide")
 
-# --- DATA LOADING AND FILTERING (Copied from other pages) ---
-@st.cache_data
-def load_data():
-    data_path = 'data/'
-    influencers = pd.read_csv(data_path + 'influencers.csv')
-    tracking = pd.read_csv(data_path + 'tracking_data.csv')
-    payouts = pd.read_csv(data_path + 'payouts.csv')
+# --- SNOWFLAKE DATA LOADING FUNCTION ---
+@st.cache_data(ttl=600)
+def load_data_from_snowflake():
+    conn = st.connection("snowflake")
+    query_influencers = "SELECT * FROM HEALTHKART_DB.RAW.INFLUENCERS;"
+    query_posts = "SELECT * FROM HEALTHKART_DB.RAW.POSTS;"
+    query_tracking = "SELECT * FROM HEALTHKART_DB.RAW.TRACKING_DATA;"
+    query_payouts = "SELECT * FROM HEALTHKART_DB.RAW.PAYOUTS;"
+    influencers = conn.query(query_influencers, ttl=600)
+    posts = conn.query(query_posts, ttl=600)
+    tracking = conn.query(query_tracking, ttl=600)
+    payouts = conn.query(query_payouts, ttl=600)
+    influencers.columns = influencers.columns.str.lower()
+    posts.columns = posts.columns.str.lower()
+    tracking.columns = tracking.columns.str.lower()
+    payouts.columns = payouts.columns.str.lower()
+    posts['date'] = pd.to_datetime(posts['date'])
     tracking['date'] = pd.to_datetime(tracking['date'])
-    return influencers, tracking, payouts
+    return influencers, posts, tracking, payouts
 
-influencers_df, tracking_df, payouts_df = load_data()
+# --- LOAD DATA AND HANDLE ERRORS ---
+try:
+    influencers_df, posts_df, tracking_df, payouts_df = load_data_from_snowflake()
+except Exception as e:
+    st.error(f"**An error occurred while connecting to Snowflake.**\n\n*Error details: {e}*")
+    st.stop()
 
-# Sidebar filters
+
+# --- SIDEBAR FILTERS ---
 st.sidebar.header("Dashboard Filters")
 all_platforms = influencers_df['platform'].unique().tolist()
 selected_platforms = st.sidebar.multiselect("Select Platform(s)", options=all_platforms, default=all_platforms)
@@ -30,31 +47,33 @@ if len(selected_date_range) != 2:
     st.warning("Please select a valid date range."); st.stop()
 start_date, end_date = selected_date_range
 
-# Filtering logic
+# --- FILTERING LOGIC ---
 filtered_influencer_ids = influencers_df[(influencers_df['platform'].isin(selected_platforms)) & (influencers_df['persona'].isin(selected_personas))]['influencer_id'].tolist()
 payouts_filtered_df = payouts_df[payouts_df['influencer_id'].isin(filtered_influencer_ids)]
 tracking_filtered_df = tracking_df[(tracking_df['date'] >= pd.to_datetime(start_date)) & (tracking_df['date'] <= pd.to_datetime(end_date))]
 influencer_tracking_filtered_df = tracking_filtered_df[tracking_filtered_df['influencer_id'].isin(filtered_influencer_ids)]
 
+
+# --- PAGE CONTENT ---
 st.title("💾 Data Explorer")
 st.markdown("View, filter, and download the detailed influencer performance data.")
 
 if payouts_filtered_df.empty:
-    st.warning("No data available for the selected filters.")
+    st.warning("No data available for the selected filters. Please adjust your selections in the sidebar.")
     st.stop()
 
-# --- Re-create the full influencer_performance_df ---
+# --- PREPARE THE FULL PERFORMANCE DATAFRAME ---
+# This section is copied from the Deep Dive page to make this page self-sufficient
 revenue_per_influencer = influencer_tracking_filtered_df.groupby('influencer_id')['revenue'].sum().reset_index()
 revenue_per_influencer.rename(columns={'revenue': 'attributed_revenue'}, inplace=True)
 influencer_performance = pd.merge(payouts_filtered_df, influencers_df, on='influencer_id')
-influencer_performance = pd.merge(influencer_performance, revenue_per_influencer, on='influencer_id', how='left').fillna(0)
-
+influencer_performance = pd.merge(influencer_performance, revenue_per_influencer, on='influencer_id', how='left')
+influencer_performance['attributed_revenue'] = influencer_performance['attributed_revenue'].fillna(0)
 total_campaign_spend = influencer_performance['total_payout'].sum()
 non_influencer_df = tracking_filtered_df[tracking_filtered_df['source'] != 'influencer_campaign']
 total_days_in_range = (end_date - start_date).days + 1
 baseline_daily_revenue = non_influencer_df['revenue'].sum() / total_days_in_range if not non_influencer_df.empty and total_days_in_range > 0 else 0
 expected_baseline_revenue = baseline_daily_revenue * total_days_in_range
-
 if total_campaign_spend > 0:
     influencer_performance['baseline_share'] = (influencer_performance['total_payout'] / total_campaign_spend) * expected_baseline_revenue
     influencer_performance['incremental_revenue'] = influencer_performance['attributed_revenue'] - influencer_performance['baseline_share']
@@ -63,15 +82,16 @@ if total_campaign_spend > 0:
 else:
     influencer_performance['incremental_roas'] = 0
 
+
 # --- DISPLAY THE DATAFRAME ---
-# Use st.dataframe to show the interactive table
 st.dataframe(influencer_performance.style.format({
     'total_payout': '₹{:,.2f}',
     'attributed_revenue': '₹{:,.2f}',
+    'follower_count': '{:,.0f}',
     'incremental_revenue': '₹{:,.2f}',
-    'incremental_roas': '{:.2f}x'
+    'incremental_roas': '{:.2f}x',
+    'rate': '{:.4f}'
 }))
-
 
 # --- DOWNLOAD BUTTON ---
 @st.cache_data
