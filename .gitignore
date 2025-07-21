@@ -1,0 +1,15 @@
+# Ignore the virtual environment folder
+# This is specific to your computer and doesn't need to be shared
+venv/
+
+# Ignore Python's generated cache files
+__pycache__/
+
+# Ignore macOS specific files
+.DS_Store
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore sensitive environment files (good practice)
+.env
