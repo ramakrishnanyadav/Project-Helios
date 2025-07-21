@@ -16,21 +16,40 @@ st.set_page_config(
 
 # --- DATA LOADING AND CACHING ---
 # The cache decorator ensures this function only runs once, making the app fast.
-@st.cache_data
-def load_data():
-    data_path = 'data/'
-    influencers = pd.read_csv(data_path + 'influencers.csv')
-    posts = pd.read_csv(data_path + 'posts.csv')
-    tracking = pd.read_csv(data_path + 'tracking_data.csv')
-    payouts = pd.read_csv(data_path + 'payouts.csv')
+# --- NEW DATA LOADING FUNCTION ---
+@st.cache_data(ttl=600) # Cache the data for 10 minutes
+def load_data_from_snowflake():
+    # Establish the connection using the secrets file
+    conn = st.connection("snowflake")
+
+    # Define the SQL queries
+    query_influencers = "SELECT * FROM INFLUENCERS;" # Simplified table name
+    query_posts = "SELECT * FROM POSTS;"
+    query_tracking = "SELECT * FROM TRACKING_DATA;"
+    query_payouts = "SELECT * FROM PAYOUTS;"
     
-    # Convert date columns to the correct format for filtering and plotting
+    # Run queries and load into pandas DataFrames
+    influencers = conn.query(query_influencers, ttl=600)
+    posts = conn.query(query_posts, ttl=600)
+    tracking = conn.query(query_tracking, ttl=600)
+    payouts = conn.query(query_payouts, ttl=600)
+    
+    # Snowflake column names are often uppercase. Convert them to lowercase.
+    influencers.columns = influencers.columns.str.lower()
+    posts.columns = posts.columns.str.lower()
+    tracking.columns = tracking.columns.str.lower()
+    payouts.columns = payouts.columns.str.lower()
+
+    # Convert date columns to the correct format
     posts['date'] = pd.to_datetime(posts['date'])
     tracking['date'] = pd.to_datetime(tracking['date'])
     
     return influencers, posts, tracking, payouts
 
-influencers_df, posts_df, tracking_df, payouts_df = load_data()
+# Now, find the line where you call the function and change it:
+# OLD: influencers_df, posts_df, tracking_df, payouts_df = load_data()
+# NEW:
+influencers_df, posts_df, tracking_df, payouts_df = load_data_from_snowflake()
 
 # --- SIDEBAR FILTERS ---
 # These widgets in the sidebar allow the user to control the dashboard.

@@ -13,3 +13,6 @@ __pycache__/
 
 # Ignore sensitive environment files (good practice)
 .env
+
+
+.streamlit/secrets.toml
