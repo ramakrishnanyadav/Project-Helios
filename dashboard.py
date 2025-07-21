@@ -20,7 +20,15 @@ st.set_page_config(
 @st.cache_data(ttl=600) # Cache the data for 10 minutes
 def load_data_from_snowflake():
     # Establish the connection using the secrets file
-    conn = st.connection("snowflake")
+    conn = st.connection(
+    "snowflake",
+    user="RAMAKRISHNAYADAV",
+    password="Your-New-Password-Here",
+    account="vz26100.your-region-here", # Use the correct full account identifier
+    warehouse="HELIOS_WH",
+    database="HEALTHKART_DB",
+    schema="RAW"
+)
 
     # Define the SQL queries
     query_influencers = "SELECT * FROM INFLUENCERS;" # Simplified table name
