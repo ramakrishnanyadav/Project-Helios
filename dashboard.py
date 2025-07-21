@@ -1,25 +1,23 @@
-# dashboard.py - DEBUGGING VERSION
+# dashboard.py - DIRECT CONNECTION DEBUGGING
 
 import streamlit as st
 import pandas as pd
-import plotly.express as px
-from datetime import datetime
+import snowflake.connector # Import the library directly
 
+# --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="Helios: Debugging", page_icon="🐞", layout="wide"
+    page_title="Helios: Direct Debugging", page_icon="🔧", layout="wide"
 )
 
-st.title("🐞 Debugging Snowflake Connection")
+st.title("🔧 Direct Snowflake Connection Test")
 
-# --- FUNCTION DEFINITION WITH HARDCODED SECRETS FOR TESTING ---
-@st.cache_data(ttl=30) # Use a short cache for debugging
-def load_data_from_snowflake_debug():
-    st.info("Attempting to connect to Snowflake with hardcoded credentials...")
+# --- Function to get a direct connection ---
+@st.cache_resource # Use cache_resource for connection objects
+def get_snowflake_connection():
+    st.info("Attempting to establish a direct connection...")
     
-    # Bypassing secrets.toml by putting credentials directly here
-    conn = st.connection(
-        "snowflake",
-        type="snowflake", # Explicitly define the connection type
+    # Use the connector directly with your credentials
+    conn = snowflake.connector.connect(
         user="RAMAKRISHNAYADAV",
         password="Your-New-Password-Goes-Here",
         account="ud57115.ap-southeast-1",
@@ -29,31 +27,38 @@ def load_data_from_snowflake_debug():
         role="SYSADMIN"
     )
     
-    st.success("st.connection() call was successful!")
-    
-    query_influencers = "SELECT * FROM HEALTHKART_DB.RAW.INFLUENCERS LIMIT 10;"
-    st.info(f"Running query: {query_influencers}")
-    
-    influencers = conn.query(query_influencers)
-    
-    st.success("Query was successful! Data received from Snowflake.")
-    st.dataframe(influencers)
-    
-    return influencers
+    st.success("Direct connection to Snowflake was successful!")
+    return conn
 
-# --- Call the debug function ---
+# --- Main app logic ---
 try:
-    load_data_from_snowflake_debug()
+    # Get the connection object
+    conn = get_snowflake_connection()
+    
+    # Create a cursor object to execute queries
+    cur = conn.cursor()
+    
+    # Execute a simple query
+    query = "SELECT * FROM HEALTHKART_DB.RAW.INFLUENCERS LIMIT 10;"
+    st.info(f"Executing query: {query}")
+    cur.execute(query)
+    
+    # Fetch the results into a pandas DataFrame
+    df = cur.fetch_pandas_all()
+    
+    st.success("Query executed and data fetched successfully!")
+    st.dataframe(df)
+
 except Exception as e:
     st.error(f"""
-        **The connection attempt failed.**
-        This means there is an issue with the credentials below, or with permissions in Snowflake.
+        **The direct connection or query failed.**
+        This points to an issue with credentials or Snowflake permissions.
 
-        - **User:** RAMAKRISHNAYADAV
-        - **Account:** ud57115.ap-southeast-1
-        - **Warehouse:** HELIOS_WH
-        - **Database:** HEALTHKART_DB
-        
-        **Error from Snowflake:**
+        **Error details:**
         {e}
     """)
+finally:
+    # Ensure the connection is closed
+    if 'conn' in locals() and conn is not None:
+        conn.close()
+        st.info("Connection closed.")
