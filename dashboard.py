@@ -20,8 +20,8 @@ st.set_page_config(
 @st.cache_data(ttl=600) # Cache the data for 10 minutes
 def load_data_from_snowflake():
     # Establish the connection using the secrets file
-   conn = st.connection("snowflake")
-   
+    conn = st.connection("snowflake")
+
     # Define the SQL queries
     query_influencers = "SELECT * FROM INFLUENCERS;" # Simplified table name
     query_posts = "SELECT * FROM POSTS;"
